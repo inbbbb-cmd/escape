@@ -1,206 +1,263 @@
-import asyncio
-import logging
-import json
-import sqlite3
-import sys
-from datetime import datetime
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-from aiogram.types import MenuButtonWebApp, WebAppInfo
-from aiogram.client.session.aiohttp import AiohttpSession 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
-# ==========================================
-# НАСТРОЙКИ
-# ==========================================
-TOKEN = "8211548854:AAHMWWYlYB7-biakPhOvjPdwP8m8H6BRotU" 
-SNAKE_URL = "https://inbbbb-cmd.github.io/rep1/" 
-BOMBERMAN_URL = "https://inbbbb-cmd.github.io/bomberman1/"
-MINESWEEPER_URL = "https://inbbbb-cmd.github.io/minesweeper1/"
-ESCAPE_URL = "https://inbbbb-cmd.github.io/escape/"            # Новая игра 1
-SPACEDEFENDER_URL = "https://inbbbb-cmd.github.io/spacedefender/" # Новая игра 2
-ADMIN_ID = 6714155003
-# ==========================================
-
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("bot.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-
-# --- БАЗА ДАННЫХ ---
-def init_db():
-    try:
-        conn = sqlite3.connect('snake.db')
-        cur = conn.cursor()
-        # Таблица рекордов
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS scores (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                score INTEGER,
-                updated_at TEXT
-            )
-        ''')
-        # Таблица пользователей
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                joined_at TEXT
-            )
-        ''')
-        conn.commit()
-        conn.close()
-        logging.info("База данных инициализирована")
-    except Exception as e:
-        logging.error(f"Ошибка БД: {e}")
-
-def save_score(user_id, username, score):
-    conn = sqlite3.connect('snake.db')
-    cur = conn.cursor()
-    
-    # Получаем текущий рекорд
-    cur.execute('SELECT score FROM scores WHERE user_id = ?', (user_id,))
-    row = cur.fetchone()
-    current_best = row[0] if row else 0
-    
-    is_new_record = False
-    # Если новый счет больше старого — обновляем
-    if score > current_best:
-        cur.execute('''
-            INSERT INTO scores (user_id, username, score, updated_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                username = excluded.username,
-                score = excluded.score,
-                updated_at = excluded.updated_at
-        ''', (user_id, username, score, datetime.now().isoformat()))
-        is_new_record = True
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Космический побег v3.0</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { 
+            background:#000; 
+            overflow:hidden; 
+            touch-action: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        canvas { display:block; background:#000; }
         
-    conn.commit()
-    conn.close()
-    return is_new_record, current_best
+        #version {
+            position:fixed; top:8px; right:12px; z-index:200;
+            color:#0ff; font:700 14px 'Courier New', monospace;
+            text-shadow:0 0 10px #0ff; opacity:0.7;
+        }
+        #ui {
+            position:fixed; top:10px; left:10px; z-index:100;
+            font:700 18px 'Courier New', monospace; color:#0ff;
+            text-shadow:0 0 10px #0ff; pointer-events:none;
+        }
+        @media (max-width:480px) {
+            #ui { font-size:16px; top:8px; left:8px; }
+            #version { font-size:13px; top:6px; right:10px; }
+        }
 
-def get_top_players(limit=5):
-    conn = sqlite3.connect('snake.db')
-    cur = conn.cursor()
-    cur.execute('SELECT username, score FROM scores ORDER BY score DESC LIMIT ?', (limit,))
-    results = cur.fetchall()
-    conn.close()
-    return results
-
-def get_all_users():
-    conn = sqlite3.connect('snake.db')
-    cur = conn.cursor()
-    cur.execute('SELECT user_id FROM users')
-    users = [row[0] for row in cur.fetchall()]
-    conn.close()
-    return users
-
-# --- БОТ С ПРОКСИ (ДЛЯ PYTHONANYWHERE) ---
-# Если запускаете локально (не на PythonAnywhere), возможно, proxy нужно убрать: session=None
-session = AiohttpSession(proxy="http://proxy.server:3128")
-bot = Bot(token=TOKEN, session=session)
-dp = Dispatcher()
-
-@dp.message(CommandStart())
-async def start(message: types.Message):
-    user_id = message.from_user.id
-    conn = sqlite3.connect('snake.db')
-    cur = conn.cursor()
-    cur.execute('INSERT OR IGNORE INTO users (user_id, joined_at) VALUES (?, ?)', 
-                (user_id, datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-
-    # Кнопка меню (слева от ввода текста) оставим на Змейку как основную игру
-    await bot.set_chat_menu_button(
-        chat_id=message.chat.id,
-        menu_button=MenuButtonWebApp(text="Играть", web_app=WebAppInfo(url=SNAKE_URL))
-    )
+        #startScreen, #gameOverScreen {
+            position:fixed; inset:0; background:rgba(0,0,0,0.98);
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            text-align:center; color:#0ff;
+        }
+        h1 { font-size:3.8rem; margin-bottom:20px; text-shadow:0 0 25px #0ff; }
+        p { font-size:1.4rem; max-width:90%; margin:12px 0; }
+        button {
+            margin-top:40px; padding:16px 50px; font-size:1.9rem;
+            background:transparent; border:3px solid #0ff; color:#0ff;
+            border-radius:10px; cursor:pointer; font-weight:bold;
+            text-shadow:0 0 15px #0ff; box-shadow:0 0 25px #0ff;
+            transition:all .25s;
+        }
+        button:active { background:#0ff; color:#000; transform:scale(0.94); }
+        .glow { text-shadow:0 0 20px #0ff, 0 0 40px #0ff; }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
     
-    # Клавиатура с ПЯТЬЮ кнопками
-    kb = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="🐍 Змейка", web_app=WebAppInfo(url=SNAKE_URL))],
-        [types.InlineKeyboardButton(text="💣 Бомбермен", web_app=WebAppInfo(url=BOMBERMAN_URL))],
-        [types.InlineKeyboardButton(text="🚩 Сапер", web_app=WebAppInfo(url=MINESWEEPER_URL))],
-        [types.InlineKeyboardButton(text="🏃 Побег", web_app=WebAppInfo(url=ESCAPE_URL))],
-        [types.InlineKeyboardButton(text="🚀 Защитник космоса", web_app=WebAppInfo(url=SPACEDEFENDER_URL))]
-    ])
+    <div id="version">v3.0</div>
     
-    await message.answer(
-        f"Привет, {message.from_user.first_name}! \nВыбери игру:", 
-        reply_markup=kb
-    )
+    <div id="ui">
+        <div>Время: <span id="time">0</span>с</div>
+        <div>Рекорд: <span id="best">0</span>с</div>
+        <div>Топливо: <span id="fuel">100</span>%</div>
+    </div>
 
-# Обработка данных от игр
-@dp.message(F.web_app_data)
-async def handle_data(message: types.Message):
-    try:
-        data = json.loads(message.web_app_data.data)
-        
-        # Если игра прислала запрос на сохранение очков
-        if data.get('action') == 'save_score':
-            score = int(data['score'])
-            name = data['name']
-            user_id = message.from_user.id
-            
-            # Сохраняем в общую базу
-            # ВНИМАНИЕ: Сейчас база хранит один общий рекорд для игрока.
-            # Если в разных играх счет сильно отличается (10 очков против 10000),
-            # возможно, стоит создать отдельные колонки или таблицы для каждой игры.
-            is_new_record, old_score = save_score(user_id, name, score)
-            
-            if is_new_record:
-                await message.answer(f"🚀 <b>НОВЫЙ РЕКОРД!</b>\nИгрок: {name}\nСчет: {score}")
-            else:
-                await message.answer(f"Игра окончена. Твой счет: {score}. \nЛучший рекорд: {old_score}")
-    except Exception as e:
-        logging.error(f"Ошибка данных WebApp: {e}")
+    <div id="startScreen" onclick="startGame()">
+        <h1 class="glow">КОСМИЧЕСКИЙ ПОБЕГ</h1>
+        <p>ПК — двигай мышью<br>Телефон — води пальцем по экрану</p>
+        <p>Собирай голубое топливо • Уворачивайся от астероидов</p>
+        <p>Поле сужается каждые 10 секунд</p>
+        <button>СТАРТ</button>
+    </div>
 
-# --- РАССЫЛКА ---
-async def daily_top():
-    logging.info("Начинаем ежедневную рассылку...")
-    top = get_top_players(10)
-    if not top:
-        return
+    <div id="gameOverScreen" style="display:none">
+        <h1 class="glow">ВЗРЫВ</h1>
+        <p>Ты продержался <span id="finalTime">0</span> секунд</p>
+        <p id="newRecord" style="color:#0f0; font-size:2.2rem; display:none">НОВЫЙ РЕКОРД!</p>
+        <button onclick="startGame()">ЕЩЁ РАЗ</button>
+    </div>
 
-    text = "🏆 <b>ТОП ИГРОКОВ</b> 🏆\n\n"
-    for i, (name, score) in enumerate(top, 1):
-        medal = "🥇" if i==1 else "🥈" if i==2 else "🥉" if i==3 else "🔸"
-        text += f"{medal} {i}. <b>{name}</b> — {score}\n"
-    
-    text += "\nКто сможет их обогнать? 👇"
-    
-    users = get_all_users()
-    count = 0
-    for user_id in users:
-        try:
-            await bot.send_message(user_id, text)
-            count += 1
-            await asyncio.sleep(0.1)
-        except Exception:
-            pass
-            
-    logging.info(f"Рассылка завершена. Отправлено {count} пользователям.")
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        let w, h;
 
-async def main():
-    init_db()
-    
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(daily_top, 'cron', hour=12, minute=0)
-    scheduler.start()
-    
-    await bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Бот запущен и готов к работе!")
-    await dp.start_polling(bot)
+        function resize() {
+            w = canvas.width  = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+        window.addEventListener('orientationchange', () => setTimeout(resize, 150));
 
-if __name__ == '__main__':
-    if TOKEN == "ВСТАВЬ_СЮДА_ТОКЕН":
-        print("ОШИБКА: Токен не установлен!")
-    else:
-        asyncio.run(main())
+        let player = { x: w/2, y: h/2, r: 15, trail: [] };
+        let asteroids = [], fuels = [], particles = [];
+        let time = 0, best = parseInt(localStorage.getItem('spaceEscapeBest')||'0'), fuel = 100;
+        let ringRadius = Math.max(w, h) * 1.4;
+        let gameRunning = false;
+
+        document.getElementById('best').textContent = best;
+
+        // Универсальное управление
+        const setPlayerPos = e => {
+            if (!gameRunning) return;
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches ? e.touches[0] : e;
+            player.x = touch.clientX - rect.left;
+            player.y = touch.clientY - rect.top;
+        };
+        canvas.addEventListener('mousemove', setPlayerPos);
+        canvas.addEventListener('touchmove', setPlayerPos, {passive:false});
+        canvas.addEventListener('touchstart', e => e.preventDefault());
+
+        function startGame() {
+            gameRunning = true;
+            time = 0; fuel = 100;
+            asteroids = []; fuels = []; particles = [];
+            player.trail = [];
+            ringRadius = Math.max(w, h) * 1.4;
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOverScreen').style.display = 'none';
+            requestAnimationFrame(loop);
+        }
+
+        function spawnAsteroid() {
+            const a = Math.random()*Math.PI*2;
+            const dist = ringRadius + 100;
+            asteroids.push({
+                x: w/2 + Math.cos(a)*dist,
+                y: h/2 + Math.sin(a)*dist,
+                r: 20 + Math.random()*40,
+                speed: 0.7 + Math.random()*2,
+                angle: a + Math.PI
+            });
+        }
+
+        function spawnFuel() {
+            if (Math.random() < 0.38) {
+                const a = Math.random()*Math.PI*2;
+                fuels.push({
+                    x: w/2 + Math.cos(a)*(ringRadius*0.78),
+                    y: h/2 + Math.sin(a)*(ringRadius*0.78),
+                    r: 13
+                });
+            }
+        }
+
+        function explode(x, y, color='#ff0066') {
+            for(let i=0; i<55; i++) {
+                const a = Math.random()*Math.PI*2;
+                const s = 4 + Math.random()*10;
+                particles.push({x,y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, life:1, color});
+            }
+        }
+
+        function loop() {
+            ctx.fillStyle = 'rgba(0,0,0,0.14)';
+            ctx.fillRect(0,0,w,h);
+
+            // Сужение кольца
+            if (Math.floor(time)%10 === 0 && time%1 < 0.1 && ringRadius > 150) {
+                ringRadius *= 0.87;
+                canvas.style.transform = 'scale(1.03)';
+                setTimeout(()=>canvas.style.transform='', 150);
+            }
+
+            if (Math.random() < 0.04 + time/700) spawnAsteroid();
+            if (Math.random() < 0.028) spawnFuel();
+
+            // След
+            player.trail.push({x:player.x, y:player.y});
+            if (player.trail.length > 20) player.trail.shift();
+            ctx.strokeStyle = '#0ff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            player.trail.forEach((p,i)=> i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+            ctx.stroke();
+
+            // Корабль
+            ctx.fillStyle = '#0ff';
+            ctx.shadowBlur = 35; ctx.shadowColor = '#0ff';
+            ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
+
+            // Астероиды
+            asteroids = asteroids.filter(a => {
+                a.x += Math.cos(a.angle) * a.speed;
+                a.y += Math.sin(a.angle) * a.speed;
+                a.speed *= 1.013;
+
+                ctx.fillStyle = '#999';
+                ctx.shadowColor = '#f44';
+                ctx.shadowBlur = 30;
+                ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI*2); ctx.fill();
+
+                if (Math.hypot(a.x-player.x, a.y-player.y) < a.r + player.r + 6) {
+                    explode(player.x, player.y);
+                    gameOver();
+                    return false;
+                }
+                return true;
+            });
+
+            // Топливо
+            fuels = fuels.filter(f => {
+                ctx.fillStyle = '#00ffff';
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 45;
+                ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
+
+                if (Math.hypot(f.x-player.x, f.y-player.y) < f.r + player.r) {
+                    fuel = Math.min(100, fuel + 30);
+                    explode(f.x, f.y, '#00ffff');
+                    return false;
+                }
+                return true;
+            });
+
+            // Кольцо
+            ctx.strokeStyle = `rgba(255,60,120,${0.5 + Math.sin(time*4)*0.2})`;
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.arc(w/2, h/2, ringRadius, 0, Math.PI*2);
+            ctx.stroke();
+
+            // Частицы
+            particles = particles.filter(p => {
+                p.x += p.vx; p.y += p.vy; p.life -= 0.018;
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x-4, p.y-4, 8, 8);
+                return p.life > 0;
+            });
+            ctx.globalAlpha = 1;
+
+            // UI + логика
+            time += 1/60;
+            fuel -= 0.01;
+            document.getElementById('time').textContent = Math.floor(time);
+            document.getElementById('fuel').textContent = Math.floor(fuel);
+
+            if (fuel <= 0 || ringRadius < 140) gameOver();
+            else requestAnimationFrame(loop);
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('finalTime').textContent = Math.floor(time);
+            if (time > best) {
+                best = Math.floor(time);
+                localStorage.setItem('spaceEscapeBest', best);
+                document.getElementById('best').textContent = best;
+                document.getElementById('newRecord').style.display = 'block';
+            } else {
+                document.getElementById('newRecord').style.display = 'none';
+            }
+            explode(player.x, player.y, '#ff0066');
+            setTimeout(() => document.getElementById('gameOverScreen').style.display = 'flex', 800);
+        }
+
+        // Старт по тапу/клику на стартовом экране
+        document.getElementById('startScreen').addEventListener('click', startGame);
+        document.getElementById('startScreen').addEventListener('touchstart', e => { e.preventDefault(); startGame(); });
+    </script>
+</body>
+</html>
