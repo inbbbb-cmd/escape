@@ -1,200 +1,430 @@
-<div id="ui">
-    <div>Время: <span id="time">0</span>с</div>
-    <div>Рекорд: <span id="best">0</span>с</div>
-    <div>Топливо: <span id="fuel">100</span>%</div>
-</div>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Космический побег v3.2</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap');
 
-<div id="startScreen">
-    <h1 class="glow">КОСМИЧЕСКИЙ ПОБЕГ</h1>
-    <p>Мышь или палец — корабль следует за тобой</p>
-    <p>Собирай топливо • Уворачивайся от астероидов</p>
-    <button onclick="startGame()">СТАРТ</button>
-</div>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #000;
+            color: #0ff;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            cursor: none;
+        }
+        #version {
+            position: fixed;
+            top: 8px;
+            right: 12px;
+            z-index: 30;
+            color: #0ff;
+            font: 700 14px 'Courier New', monospace;
+            text-shadow: 0 0 10px #0ff;
+            opacity: 0.85;
+        }
+        #ui {
+            position: fixed;
+            top: 12px;
+            left: 14px;
+            z-index: 20;
+            font: 700 18px 'Courier New', monospace;
+            color: #0ff;
+            text-shadow: 0 0 12px #0ff;
+            pointer-events: none;
+            line-height: 1.6;
+        }
+        #ui span { font-variant-numeric: tabular-nums; }
+        .screen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.96);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #0ff;
+            z-index: 50;
+            padding: 20px;
+            gap: 14px;
+        }
+        .hidden { display: none !important; }
+        h1 { text-shadow: 0 0 25px #0ff; }
+        button {
+            margin-top: 28px;
+            padding: 16px 54px;
+            font-size: 1.8rem;
+            background: transparent;
+            border: 3px solid #0ff;
+            color: #0ff;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 700;
+            text-shadow: 0 0 12px #0ff;
+            box-shadow: 0 0 25px #0ff;
+            transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+        }
+        button:hover { transform: scale(1.03); }
+        button:active { background: #0ff; color: #000; transform: scale(0.95); }
+        button:focus-visible { outline: 3px solid #0ff; outline-offset: 3px; }
+        .glow { text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+        @media (max-width: 520px) {
+            #ui { font-size: 16px; top: 8px; left: 10px; }
+            #version { font-size: 12px; top: 6px; right: 8px; }
+            button { width: 90%; font-size: 1.4rem; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+    <div id="version">v3.2</div>
+    <div id="ui">
+        <div>Время: <span id="time">0</span>с</div>
+        <div>Рекорд: <span id="best">0</span>с</div>
+        <div>Топливо: <span id="fuel">100</span>%</div>
+    </div>
 
-<div id="gameOverScreen" style="display:none">
-    <h1 class="glow">ВЗРЫВ</h1>
-    <p>Ты продержался <span id="finalTime">0</span> секунд</p>
-    <p id="newRecord" style="color:#0f0; font-size:2.2rem; display:none">НОВЫЙ РЕКОРД!</p>
-    <button onclick="startGame()">ЕЩЁ РАЗ</button>
-</div>
+    <div id="startScreen" class="screen">
+        <h1 class="glow text-4xl md:text-6xl font-bold">КОСМИЧЕСКИЙ ПОБЕГ</h1>
+        <p class="text-lg md:text-2xl opacity-90">Веди корабль пальцем или мышью — он следует за тобой</p>
+        <p class="text-lg md:text-2xl opacity-90">Собирай топливо, избегай астероидов и не дай кольцу схлопнуться</p>
+        <button data-action="start">СТАРТ</button>
+    </div>
 
-<script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    let w = canvas.width  = window.innerWidth;
-    let h = canvas.height = window.innerHeight;
+    <div id="gameOverScreen" class="screen hidden">
+        <h1 class="glow text-4xl md:text-6xl font-bold">ВЗРЫВ</h1>
+        <p class="text-xl md:text-2xl">Ты продержался <span id="finalTime">0</span> секунд</p>
+        <p id="newRecord" class="text-2xl font-bold text-emerald-300 hidden">НОВЫЙ РЕКОРД!</p>
+        <button data-action="start">ЕЩЁ РАЗ</button>
+    </div>
 
-    // Безопасный ресайз
-    let resizeTimer;
-    function resize() {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            w = canvas.width  = window.innerWidth;
-            h = canvas.height = window.innerHeight;
-            if (gameRunning) ringRadius = Math.max(w, h) * 1.4;
-        }, 100);
-    }
-    window.addEventListener('resize', resize);
-    window.addEventListener('orientationchange', resize);
+    <script>
+        (() => {
+            const canvas = document.getElementById('game');
+            const ctx = canvas.getContext('2d');
 
-    let player = { x: w/2, y: h/2, r: 15, trail: [] };
-    let asteroids = [], fuels = [], particles = [];
-    let time = 0, best = parseInt(localStorage.getItem('spaceEscapeBest')||'0'), fuel = 100;
-    let ringRadius = Math.max(w, h) * 1.4;
-    let gameRunning = false;
-    let lastShrink = 0;
+            const uiTime = document.getElementById('time');
+            const uiBest = document.getElementById('best');
+            const uiFuel = document.getElementById('fuel');
+            const startScreen = document.getElementById('startScreen');
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            const finalTimeEl = document.getElementById('finalTime');
+            const newRecordBadge = document.getElementById('newRecord');
+            document.querySelectorAll('[data-action="start"]').forEach(btn => btn.addEventListener('click', startGame));
 
-    document.getElementById('best').textContent = best;
+            const settings = {
+                fuelDrainPerSecond: 4.5,
+                shrinkEvery: 10,
+                shrinkFactor: 0.88,
+                minRingRadius: 130
+            };
 
-    // Управление
-    const movePlayer = e => {
-        if (!gameRunning) return;
-        const rect = canvas.getBoundingClientRect();
-        const touch = e.touches ? e.touches[0] : e;
-        player.x = touch.clientX - rect.left;
-        player.y = touch.clientY - rect.top;
-    };
-    canvas.addEventListener('mousemove', movePlayer);
-    canvas.addEventListener('touchmove', movePlayer, {passive:false});
-    canvas.addEventListener('touchstart', e => e.preventDefault());
+            let best = 0;
+            try {
+                const stored = localStorage.getItem('spaceEscapeBest');
+                best = stored ? parseInt(stored, 10) || 0 : 0;
+            } catch (err) {
+                best = 0;
+            }
+            uiBest.textContent = best;
 
-    function startGame() {
-        gameRunning = true;
-        time = 0; fuel = 100;
-        asteroids = []; fuels = []; particles = [];
-        player = { x: w/2, y: h/2, r: 15, trail: [] };
-        ringRadius = Math.max(w, h) * 1.4;
-        lastShrink = 0;
-        document.getElementById('startScreen').style.display = 'none';
-        document.getElementById('gameOverScreen').style.display = 'none';
-        requestAnimationFrame(loop);
-    }
+            let w = 0;
+            let h = 0;
+            let ringRadius = 0;
+            let shrinkStage = 0;
+            let player = { x: 0, y: 0, r: 16, trail: [] };
+            let asteroids = [];
+            let fuels = [];
+            let particles = [];
+            let fuel = 100;
+            let timeSurvived = 0;
+            let lastFrameTime = performance.now();
+            let gameRunning = false;
+            let loopHandle = null;
+            let resizeTimer = 0;
 
-    function spawnAsteroid() {
-        const a = Math.random() * Math.PI * 2;
-        const dist = ringRadius + 120;
-        asteroids.push({
-            x: w/2 + Math.cos(a) * dist,
-            y: h/2 + Math.sin(a) * dist,
-            r: 20 + Math.random() * 40,
-            speed: 0.8 + Math.random() * 2.2,
-            angle: a + Math.PI
-        });
-    }
-
-    function spawnFuel() {
-        if (Math.random() < 0.4) {
-            const a = Math.random() * Math.PI * 2;
-            fuels.push({
-                x: w/2 + Math.cos(a) * (ringRadius * 0.78),
-                y: h/2 + Math.sin(a) * (ringRadius * 0.78),
-                r: 13
+            function baseRingRadius() {
+                return Math.hypot(w, h) * 0.34 + Math.min(w, h) * 0.28;
+            }
+            function clampPlayer() {
+                player.x = Math.min(Math.max(player.r, player.x), w - player.r);
+                player.y = Math.min(Math.max(player.r, player.y), h - player.r);
+            }
+            function setCanvasSize() {
+                w = window.innerWidth;
+                h = window.innerHeight;
+                canvas.width = w;
+                canvas.height = h;
+                if (!gameRunning) {
+                    ringRadius = baseRingRadius();
+                } else {
+                    ringRadius = Math.max(ringRadius, baseRingRadius() * 0.85);
+                    clampPlayer();
+                }
+            }
+            setCanvasSize();
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(setCanvasSize, 80);
             });
-        }
-    }
+            window.addEventListener('orientationchange', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(setCanvasSize, 80);
+            });
 
-    function explode(x, y, color = '#ff0066') {
-        for (let i = 0; i < 60; i++) {
-            const a = Math.random() * Math.PI * 2;
-            const s = 4 + Math.random() * 11;
-            particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, color });
-        }
-    }
-
-    function loop() {
-        ctx.fillStyle = 'rgba(0,0,0,0.15)';
-        ctx.fillRect(0, 0, w, h);
-
-        // Сужение кольца — строго раз в 10 секунд
-        const current10 = Math.floor(time / 10);
-        if (current10 > lastShrink && ringRadius > 140) {
-            lastShrink = current10;
-            ringRadius *= 0.86;
-        }
-
-        if (Math.random() < 0.045 + time/600) spawnAsteroid();
-        if (Math.random() < 0.03) spawnFuel();
-
-        // След
-        player.trail.push({x: player.x, y: player.y});
-        if (player.trail.length > 22) player.trail.shift();
-        ctx.strokeStyle = '#0ff'; ctx.lineWidth = 4;
-        ctx.beginPath();
-        player.trail.forEach((p,i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
-        ctx.stroke();
-
-        // Корабль
-        ctx.fillStyle = '#0ff';
-        ctx.shadowBlur = 35; ctx.shadowColor = '#0ff';
-        ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
-
-        // Астероиды
-        for (let i = asteroids.length - 1; i >= 0; i--) {
-            const a = asteroids[i];
-            a.x += Math.cos(a.angle) * a.speed;
-            a.y += Math.sin(a.angle) * a.speed;
-            a.speed *= 1.014;
-
-            ctx.fillStyle = '#aaa'; ctx.shadowColor = '#f55'; ctx.shadowBlur = 30;
-            ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI*2); ctx.fill();
-
-            if (Math.hypot(a.x - player.x, a.y - player.y) < a.r + player.r + 8) {
-                explode(player.x, player.y);
-                gameOver();
-                return;
+            function handlePointer(event) {
+                if (!gameRunning) return;
+                const source = event.touches ? event.touches[0] : event;
+                if (!source) return;
+                player.x = Math.min(Math.max(player.r, source.clientX), w - player.r);
+                player.y = Math.min(Math.max(player.r, source.clientY), h - player.r);
             }
-        }
+            canvas.addEventListener('pointermove', handlePointer);
+            canvas.addEventListener('pointerdown', handlePointer);
+            canvas.addEventListener('touchmove', e => {
+                e.preventDefault();
+                handlePointer(e);
+            }, { passive: false });
+            canvas.addEventListener('touchstart', e => {
+                e.preventDefault();
+                handlePointer(e);
+            }, { passive: false });
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
+            document.addEventListener('keydown', e => {
+                if (e.code === 'Space' && !gameRunning) {
+                    e.preventDefault();
+                    startGame();
+                }
+            });
 
-        // Топливо
-        for (let i = fuels.length - 1; i >= 0; i--) {
-            const f = fuels[i];
-            ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 45;
-            ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
-
-            if (Math.hypot(f.x - player.x, f.y - player.y) < f.r + player.r) {
-                fuel = Math.min(100, fuel + 32);
-                explode(f.x, f.y, '#00ffff');
-                fuels.splice(i, 1);
+            function spawnAsteroid() {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = ringRadius + 140;
+                const x = w / 2 + Math.cos(angle) * distance;
+                const y = h / 2 + Math.sin(angle) * distance;
+                asteroids.push({
+                    x,
+                    y,
+                    r: 18 + Math.random() * 34,
+                    speed: 0.9 + Math.random() * 1.9,
+                    angle: Math.atan2(h / 2 - y, w / 2 - x) + (Math.random() - 0.5) * 0.22
+                });
             }
-        }
+            function spawnFuel() {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * (ringRadius * 0.7);
+                fuels.push({
+                    x: w / 2 + Math.cos(angle) * distance,
+                    y: h / 2 + Math.sin(angle) * distance,
+                    r: 13,
+                    pulse: Math.random() * Math.PI * 2
+                });
+            }
+            function explode(x, y, color = '#ff0077') {
+                for (let i = 0; i < 60; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    const speed = 2 + Math.random() * 6;
+                    particles.push({
+                        x,
+                        y,
+                        vx: Math.cos(a) * speed,
+                        vy: Math.sin(a) * speed,
+                        life: 1,
+                        color
+                    });
+                }
+                if (particles.length > 600) particles.splice(0, particles.length - 600);
+            }
+            function updateTrail() {
+                player.trail.push({ x: player.x, y: player.y });
+                if (player.trail.length > 24) player.trail.shift();
+            }
+            function drawTrail() {
+                if (player.trail.length < 2) return;
+                ctx.save();
+                ctx.strokeStyle = '#00e5ff';
+                ctx.lineWidth = 3;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                player.trail.forEach((point, index) => {
+                    if (index === 0) ctx.moveTo(point.x, point.y);
+                    else ctx.lineTo(point.x, point.y);
+                });
+                ctx.stroke();
+                ctx.restore();
+            }
+            function drawRing(now) {
+                ctx.save();
+                ctx.strokeStyle = `rgba(255,80,140,${0.45 + Math.sin(now * 0.004) * 0.2})`;
+                ctx.lineWidth = 12;
+                ctx.shadowBlur = 40;
+                ctx.shadowColor = '#ff3cac';
+                ctx.beginPath();
+                ctx.arc(w / 2, h / 2, ringRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
 
-        // Кольцо
-        ctx.strokeStyle = `rgba(255,80,140,${0.5 + Math.sin(time*3)*0.25})`;
-        ctx.lineWidth = 12;
-        ctx.beginPath(); ctx.arc(w/2, h/2, ringRadius, 0, Math.PI*2); ctx.stroke();
+            function loop(now) {
+                if (!gameRunning) return;
+                const delta = Math.min((now - lastFrameTime) / 1000, 0.05);
+                lastFrameTime = now;
 
-        // Частицы
-        for (let i = particles.length - 1; i >= 0; i--) {
-            const p = particles[i];
-            p.x += p.vx; p.y += p.vy; p.life -= 0.018;
-            if (p.life <= 0) { particles.splice(i,1); continue; }
-            ctx.globalAlpha = p.life;
-            ctx.fillStyle = p.color;
-            ctx.fillRect(p.x-4, p.y-4, 8, 8);
-        }
-        ctx.globalAlpha = 1;
+                ctx.fillStyle = 'rgba(0,0,0,0.22)';
+                ctx.fillRect(0, 0, w, h);
 
-        time += 1/60;
-        fuel -= 0.011;
-        document.getElementById('time').textContent = Math.floor(time);
-        document.getElementById('fuel').textContent = Math.floor(fuel);
+                const stage = Math.floor(timeSurvived / settings.shrinkEvery);
+                if (stage > shrinkStage) {
+                    shrinkStage = stage;
+                    ringRadius = Math.max(settings.minRingRadius + 25, ringRadius * settings.shrinkFactor);
+                }
 
-        if (fuel <= 0 || ringRadius < 140) gameOver();
-        else requestAnimationFrame(loop);
-    }
+                const asteroidChance = Math.min((0.04 + timeSurvived / 650) * delta * 60, 0.7);
+                if (Math.random() < asteroidChance) spawnAsteroid();
+                if (fuels.length < 3) {
+                    const fuelChance = Math.min(0.03 * delta * 60, 0.45);
+                    if (Math.random() < fuelChance) spawnFuel();
+                }
 
-    function gameOver() {
-        gameRunning = false;
-        document.getElementById('finalTime').textContent = Math.floor(time);
-        if (time > best) {
-            best = Math.floor(time);
-            localStorage.setItem('spaceEscapeBest', best);
-            document.getElementById('best').textContent = best;
-            document.getElementById('newRecord').style.display = 'block';
-        } else {
-            document.getElementById('newRecord').style.display = 'none';
-        }
-        explode(player.x, player.y, '#ff0066');
-        setTimeout(() => document.getElementById('gameOverScreen').style.display = 'flex', 900);
-    }
-</script>
+                drawRing(now);
+                updateTrail();
+                drawTrail();
+
+                ctx.save();
+                ctx.fillStyle = '#0ff';
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 36;
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                for (let i = asteroids.length - 1; i >= 0; i--) {
+                    const a = asteroids[i];
+                    a.x += Math.cos(a.angle) * a.speed;
+                    a.y += Math.sin(a.angle) * a.speed;
+                    a.speed *= 1 + 0.18 * delta;
+
+                    ctx.save();
+                    ctx.fillStyle = '#bbb';
+                    ctx.shadowColor = '#f44';
+                    ctx.shadowBlur = 25;
+                    ctx.beginPath();
+                    ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    if (Math.hypot(a.x - player.x, a.y - player.y) < a.r + player.r) {
+                        explode(player.x, player.y);
+                        finishRun();
+                        return;
+                    }
+                    if (a.x < -200 || a.x > w + 200 || a.y < -200 || a.y > h + 200) {
+                        asteroids.splice(i, 1);
+                    }
+                }
+
+                for (let i = fuels.length - 1; i >= 0; i--) {
+                    const f = fuels[i];
+                    ctx.save();
+                    ctx.shadowColor = '#0ff';
+                    ctx.shadowBlur = 40;
+                    const pulse = 1 + Math.sin(now * 0.005 + f.pulse) * 0.18;
+                    ctx.fillStyle = '#00ffff';
+                    ctx.beginPath();
+                    ctx.arc(f.x, f.y, f.r * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    if (Math.hypot(f.x - player.x, f.y - player.y) < f.r + player.r + 4) {
+                        fuel = Math.min(100, fuel + 32);
+                        explode(f.x, f.y, '#00ffff');
+                        fuels.splice(i, 1);
+                    }
+                }
+
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.x += p.vx * delta * 60 * 0.2;
+                    p.y += p.vy * delta * 60 * 0.2;
+                    p.life -= 0.9 * delta;
+                    if (p.life <= 0) {
+                        particles.splice(i, 1);
+                        continue;
+                    }
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+                }
+                ctx.globalAlpha = 1;
+
+                timeSurvived += delta;
+                fuel = Math.max(0, fuel - settings.fuelDrainPerSecond * delta);
+                uiTime.textContent = Math.floor(timeSurvived);
+                uiFuel.textContent = Math.max(0, Math.floor(fuel));
+
+                if (fuel <= 0 || ringRadius <= settings.minRingRadius) {
+                    explode(player.x, player.y, '#ff0077');
+                    finishRun();
+                    return;
+                }
+
+                loopHandle = requestAnimationFrame(loop);
+            }
+
+            function startGame() {
+                setCanvasSize();
+                cancelAnimationFrame(loopHandle);
+                asteroids = [];
+                fuels = [];
+                particles = [];
+                player = { x: w / 2, y: h / 2, r: 16, trail: [] };
+                fuel = 100;
+                timeSurvived = 0;
+                shrinkStage = 0;
+                ringRadius = baseRingRadius();
+                lastFrameTime = performance.now();
+                uiTime.textContent = '0';
+                uiFuel.textContent = '100';
+                startScreen.classList.add('hidden');
+                gameOverScreen.classList.add('hidden');
+                newRecordBadge.classList.add('hidden');
+                gameRunning = true;
+                loopHandle = requestAnimationFrame(loop);
+            }
+
+            function finishRun() {
+                if (!gameRunning) return;
+                gameRunning = false;
+                finalTimeEl.textContent = Math.floor(timeSurvived);
+                if (timeSurvived > best) {
+                    best = Math.floor(timeSurvived);
+                    uiBest.textContent = best;
+                    newRecordBadge.classList.remove('hidden');
+                    try { localStorage.setItem('spaceEscapeBest', String(best)); } catch (err) {}
+                } else {
+                    newRecordBadge.classList.add('hidden');
+                }
+                setTimeout(() => gameOverScreen.classList.remove('hidden'), 450);
+            }
+        })();
+    </script>
+</body>
+</html>
