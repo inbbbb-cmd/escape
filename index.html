@@ -2,322 +2,500 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Telegram Snake</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Космический побег v3.2</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Telegram WebApp API -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            /* Блокируем скролл и зум, но оставляем возможность кликать */
-            overscroll-behavior: none;
-            touch-action: none; 
-            -webkit-user-select: none;
+            background: #000;
+            color: #0ff;
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            overflow: hidden;
+            touch-action: none;
             user-select: none;
-        }
-        /* Разрешаем взаимодействие с инпутами и кнопками */
-        input, button {
-            touch-action: manipulation;
-            user-select: text;
+            -webkit-tap-highlight-color: transparent;
         }
         canvas {
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.2);
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            cursor: none;
         }
-        .glass-input {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        #version {
+            position: fixed;
+            top: 8px;
+            right: 12px;
+            z-index: 30;
+            color: #0ff;
+            font: 700 14px 'Courier New', monospace;
+            text-shadow: 0 0 10px #0ff;
+            opacity: 0.85;
         }
-        .glass-input:focus {
-            outline: none;
-            border-color: #4ade80;
-            box-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
+        #ui {
+            position: fixed;
+            top: 12px;
+            left: 14px;
+            z-index: 20;
+            font: 700 18px 'Courier New', monospace;
+            color: #0ff;
+            text-shadow: 0 0 12px #0ff;
+            pointer-events: none;
+            line-height: 1.6;
         }
-        .input-error {
-            border-color: #ef4444 !important;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.5) !important;
-            animation: shake 0.3s ease-in-out;
+        #ui span { font-variant-numeric: tabular-nums; }
+        .screen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.96);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #0ff;
+            z-index: 50;
+            padding: 20px;
+            gap: 14px;
         }
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+        .hidden { display: none !important; }
+        h1 { text-shadow: 0 0 25px #0ff; }
+        button {
+            margin-top: 28px;
+            padding: 16px 54px;
+            font-size: 1.8rem;
+            background: transparent;
+            border: 3px solid #0ff;
+            color: #0ff;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 700;
+            text-shadow: 0 0 12px #0ff;
+            box-shadow: 0 0 25px #0ff;
+            transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+        }
+        button:hover { transform: scale(1.03); }
+        button:active { background: #0ff; color: #000; transform: scale(0.95); }
+        button:focus-visible { outline: 3px solid #0ff; outline-offset: 3px; }
+        .glow { text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+        @media (max-width: 520px) {
+            #ui { font-size: 16px; top: 8px; left: 10px; }
+            #version { font-size: 12px; top: 6px; right: 8px; }
+            button { width: 90%; font-size: 1.4rem; }
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white flex flex-col items-center justify-center h-screen w-full overflow-hidden font-mono">
-
-    <!-- Верхняя панель -->
-    <div class="w-full max-w-md px-4 flex justify-between items-center mb-4 pointer-events-none">
-        <div class="text-xl font-bold text-green-400 flex items-center gap-2">
-            <span>🐍</span> <span id="score">0</span>
-        </div>
-        <div class="text-sm text-gray-400">
-            Рекорд: <span id="high-score">0</span>
-        </div>
+<body>
+    <canvas id="game"></canvas>
+    <div id="version">v3.2</div>
+    <div id="ui">
+        <div>Время: <span id="time">0</span>с</div>
+        <div>Рекорд: <span id="best">0</span>с</div>
+        <div>Топливо: <span id="fuel">100</span>%</div>
     </div>
 
-    <!-- Игровой контейнер -->
-    <div class="relative">
-        <canvas id="gameCanvas" class="bg-gray-800 rounded-lg border-2 border-gray-700 block"></canvas>
-        
-        <!-- Оверлей (Меню) -->
-        <div id="overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 rounded-lg z-50 p-6 transition-opacity duration-300">
-            <h1 class="text-4xl font-bold text-green-500 mb-2 tracking-widest">SNAKE</h1>
-            <p id="status-text" class="text-gray-300 mb-4 text-center text-sm">Введите имя:</p>
-            
-            <!-- Инпут -->
-            <div class="mb-6 w-full max-w-[200px]">
-                <input type="text" id="player-name" placeholder="Имя" maxlength="12" 
-                       class="glass-input w-full px-4 py-3 rounded-lg text-center text-white placeholder-gray-500 transition-all text-lg">
-            </div>
-
-            <!-- Кнопка -->
-            <button id="start-btn" class="bg-green-600 active:bg-green-700 hover:bg-green-500 text-white font-bold py-4 px-8 rounded-full shadow-lg transition transform active:scale-95 w-full max-w-[200px]">
-                ИГРАТЬ
-            </button>
-        </div>
+    <div id="startScreen" class="screen">
+        <h1 class="glow text-4xl md:text-6xl font-bold">КОСМИЧЕСКИЙ ПОБЕГ</h1>
+        <p class="text-lg md:text-2xl opacity-90">Веди корабль пальцем или мышью — он следует за тобой</p>
+        <p class="text-lg md:text-2xl opacity-90">Собирай топливо, избегай астероидов и не дай кольцу схлопнуться</p>
+        <button data-action="start">СТАРТ</button>
     </div>
 
-    <div class="mt-6 text-gray-500 text-xs text-center max-w-xs pointer-events-none">
-        <p class="mb-1">Управление: Свайпы или Стрелки</p>
+    <div id="gameOverScreen" class="screen hidden">
+        <h1 class="glow text-4xl md:text-6xl font-bold">ВЗРЫВ</h1>
+        <p class="text-xl md:text-2xl">Ты продержался <span id="finalTime">0</span> секунд</p>
+        <p id="newRecord" class="text-2xl font-bold text-emerald-300 hidden">НОВЫЙ РЕКОРД!</p>
+        <button data-action="start">ЕЩЁ РАЗ</button>
     </div>
 
     <script>
-        // --- Telegram Setup ---
-        const tg = window.Telegram.WebApp;
-        tg.expand(); 
-        tg.ready();
-
-        // Авто-заполнение имени
-        const nameInput = document.getElementById('player-name');
-        if (tg.initDataUnsafe?.user?.first_name) {
-            nameInput.value = tg.initDataUnsafe.user.first_name;
-        }
-
-        // Цвета темы
-        if (tg.themeParams) {
-            document.body.style.backgroundColor = tg.themeParams.bg_color || '#111827';
-            document.body.style.color = tg.themeParams.text_color || '#ffffff';
-        }
-
-        // --- Game Elements ---
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const scoreEl = document.getElementById('score');
-        const highScoreEl = document.getElementById('high-score');
-        const overlay = document.getElementById('overlay');
-        const startBtn = document.getElementById('start-btn');
-        const statusText = document.getElementById('status-text');
-
-        // --- Settings ---
-        const GRID_SIZE = 20;
-        let TILE_SIZE = 0;
-        let gameInterval;
-        let gameRunning = false;
-        
-        // --- State ---
-        let snake = [];
-        let food = {};
-        let direction = 'RIGHT';
-        let nextDirection = 'RIGHT';
-        let score = 0;
-        let highScore = localStorage.getItem('snake_highscore') || 0;
-        highScoreEl.innerText = highScore;
-        let speed = 120;
-
-        // --- Resizing ---
-        function resizeCanvas() {
-            const maxWidth = Math.min(window.innerWidth - 32, 400);
-            const maxHeight = window.innerHeight - 150;
-            const size = Math.min(maxWidth, maxHeight);
-            
-            TILE_SIZE = Math.floor(size / GRID_SIZE);
-            canvas.width = TILE_SIZE * GRID_SIZE;
-            canvas.height = TILE_SIZE * GRID_SIZE;
-            
-            if (!gameRunning) draw();
-        }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // --- Game Logic ---
-
-        function startGameHandler(e) {
-            // Предотвращаем двойное срабатывание (click + touch)
-            if (e && e.cancelable) e.preventDefault();
-            
-            const playerName = nameInput.value.trim();
-            
-            // Валидация имени
-            if (!playerName) {
-                nameInput.classList.add('input-error');
-                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-                setTimeout(() => nameInput.classList.remove('input-error'), 500);
-                nameInput.focus();
-                return;
+        (() => {
+            // --- Telegram WebApp интеграция ---
+            let tg = null;
+            let isTelegram = false;
+            try {
+                if (window.Telegram && window.Telegram.WebApp) {
+                    tg = window.Telegram.WebApp;
+                    tg.ready();
+                    tg.expand();
+                    isTelegram = true;
+                }
+            } catch (e) {
+                tg = null;
+                isTelegram = false;
             }
 
-            // Сброс UI
-            nameInput.blur(); // Скрываем клавиатуру
-            overlay.style.opacity = '0';
-            setTimeout(() => overlay.classList.add('hidden'), 300);
+            // Можно при желании показывать подсказку, что рейтинг работает только через бота,
+            // но отдельного текста в UI здесь не добавляем — логика только в отправке.
 
-            // Старт логики
-            initGameLogic();
-        }
+            const GAME_ID = "escape";
+            const GAME_NAME = "Космический побег";
+            const GAME_VERSION = "v3.2";
 
-        function initGameLogic() {
-            snake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
-            direction = 'RIGHT';
-            nextDirection = 'RIGHT';
-            score = 0;
-            speed = 120;
-            scoreEl.innerText = score;
-            spawnFood();
-            gameRunning = true;
+            const canvas = document.getElementById('game');
+            const ctx = canvas.getContext('2d');
 
-            if (gameInterval) clearInterval(gameInterval);
-            gameInterval = setInterval(gameLoop, speed);
-        }
+            const uiTime = document.getElementById('time');
+            const uiBest = document.getElementById('best');
+            const uiFuel = document.getElementById('fuel');
+            const startScreen = document.getElementById('startScreen');
+            const gameOverScreen = document.getElementById('gameOverScreen');
+            const finalTimeEl = document.getElementById('finalTime');
+            const newRecordBadge = document.getElementById('newRecord');
+            document.querySelectorAll('[data-action="start"]').forEach(btn =>
+                btn.addEventListener('click', startGame)
+            );
 
-        function spawnFood() {
-            while (true) {
-                let newFood = {
-                    x: Math.floor(Math.random() * GRID_SIZE),
-                    y: Math.floor(Math.random() * GRID_SIZE)
-                };
-                let onSnake = snake.some(s => s.x === newFood.x && s.y === newFood.y);
-                if (!onSnake) {
-                    food = newFood;
-                    break;
+            const settings = {
+                fuelDrainPerSecond: 4.5,
+                shrinkEvery: 10,
+                shrinkFactor: 0.88,
+                minRingRadius: 130
+            };
+
+            let best = 0;
+            try {
+                const stored = localStorage.getItem('spaceEscapeBest');
+                best = stored ? parseInt(stored, 10) || 0 : 0;
+            } catch (err) {
+                best = 0;
+            }
+            uiBest.textContent = best;
+
+            let w = 0;
+            let h = 0;
+            let ringRadius = 0;
+            let shrinkStage = 0;
+            let player = { x: 0, y: 0, r: 16, trail: [] };
+            let asteroids = [];
+            let fuels = [];
+            let particles = [];
+            let fuel = 100;
+            let timeSurvived = 0;
+            let lastFrameTime = performance.now();
+            let gameRunning = false;
+            let loopHandle = null;
+            let resizeTimer = 0;
+
+            function baseRingRadius() {
+                return Math.hypot(w, h) * 0.34 + Math.min(w, h) * 0.28;
+            }
+
+            function clampPlayer() {
+                player.x = Math.min(Math.max(player.r, player.x), w - player.r);
+                player.y = Math.min(Math.max(player.r, player.y), h - player.r);
+            }
+
+            function setCanvasSize() {
+                w = window.innerWidth;
+                h = window.innerHeight;
+                canvas.width = w;
+                canvas.height = h;
+                if (!gameRunning) {
+                    ringRadius = baseRingRadius();
+                } else {
+                    ringRadius = Math.max(ringRadius, baseRingRadius() * 0.85);
+                    clampPlayer();
                 }
             }
-        }
 
-        function gameLoop() {
-            direction = nextDirection;
-            let headX = snake[0].x;
-            let headY = snake[0].y;
-
-            if (direction === 'LEFT') headX--;
-            if (direction === 'UP') headY--;
-            if (direction === 'RIGHT') headX++;
-            if (direction === 'DOWN') headY++;
-
-            if (headX < 0 || headX >= GRID_SIZE || headY < 0 || headY >= GRID_SIZE || checkCollision(headX, headY)) {
-                gameOver();
-                return;
-            }
-
-            const newHead = { x: headX, y: headY };
-
-            if (headX === food.x && headY === food.y) {
-                score++;
-                scoreEl.innerText = score;
-                if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-                
-                if (score % 5 === 0 && speed > 60) {
-                    clearInterval(gameInterval);
-                    speed -= 5;
-                    gameInterval = setInterval(gameLoop, speed);
-                }
-                snake.unshift(newHead);
-                spawnFood();
-            } else {
-                snake.pop();
-                snake.unshift(newHead);
-            }
-            draw();
-        }
-
-        function checkCollision(x, y) {
-            return snake.some(s => s.x === x && s.y === y);
-        }
-
-        function draw() {
-            ctx.fillStyle = '#1f2937';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Food
-            ctx.fillStyle = '#ef4444';
-            ctx.beginPath();
-            const fX = food.x * TILE_SIZE + TILE_SIZE / 2;
-            const fY = food.y * TILE_SIZE + TILE_SIZE / 2;
-            ctx.arc(fX, fY, TILE_SIZE / 2 - 2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Snake
-            snake.forEach((s, i) => {
-                ctx.fillStyle = i === 0 ? '#22c55e' : '#4ade80';
-                ctx.fillRect(s.x * TILE_SIZE + 1, s.y * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+            setCanvasSize();
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(setCanvasSize, 80);
             });
-        }
+            window.addEventListener('orientationchange', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(setCanvasSize, 80);
+            });
 
-        function gameOver() {
-            gameRunning = false;
-            clearInterval(gameInterval);
-            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
-
-            const playerName = nameInput.value.trim();
-            
-            // Сохраняем рекорд локально
-            if (score > highScore) {
-                highScore = score;
-                localStorage.setItem('snake_highscore', highScore);
-                highScoreEl.innerText = highScore;
-                statusText.innerText = `Новый рекорд: ${score}!`;
-            } else {
-                statusText.innerText = `Счет: ${score}`;
+            function handlePointer(event) {
+                if (!gameRunning) return;
+                const source = event.touches ? event.touches[0] : event;
+                if (!source) return;
+                player.x = Math.min(Math.max(player.r, source.clientX), w - player.r);
+                player.y = Math.min(Math.max(player.r, source.clientY), h - player.r);
             }
 
-            startBtn.innerText = "ЕЩЕ РАЗ";
-            overlay.classList.remove('hidden');
-            overlay.style.opacity = '1';
+            canvas.addEventListener('pointermove', handlePointer);
+            canvas.addEventListener('pointerdown', handlePointer);
+            canvas.addEventListener('touchmove', e => {
+                e.preventDefault();
+                handlePointer(e);
+            }, { passive: false });
+            canvas.addEventListener('touchstart', e => {
+                e.preventDefault();
+                handlePointer(e);
+            }, { passive: false });
+            canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-            // Отправка данных
-            const data = JSON.stringify({ action: 'save_score', name: playerName, score: score });
-            tg.sendData(data);
-        }
+            document.addEventListener('keydown', e => {
+                if (e.code === 'Space' && !gameRunning) {
+                    e.preventDefault();
+                    startGame();
+                }
+            });
 
-        // --- Input Listeners ---
-        // Поддержка и клика, и тача для надежности
-        startBtn.addEventListener('click', startGameHandler);
-        startBtn.addEventListener('touchstart', startGameHandler, { passive: false });
-
-        // Keyboard Controls
-        document.addEventListener('keydown', (e) => {
-            if (!gameRunning) return;
-            const k = e.key;
-            if ((k === 'ArrowLeft' || k === 'a') && direction !== 'RIGHT') nextDirection = 'LEFT';
-            if ((k === 'ArrowUp' || k === 'w') && direction !== 'DOWN') nextDirection = 'UP';
-            if ((k === 'ArrowRight' || k === 'd') && direction !== 'LEFT') nextDirection = 'RIGHT';
-            if ((k === 'ArrowDown' || k === 's') && direction !== 'UP') nextDirection = 'DOWN';
-        });
-
-        // Swipe Controls
-        let tsX = 0, tsY = 0;
-        document.addEventListener('touchstart', e => { tsX = e.changedTouches[0].screenX; tsY = e.changedTouches[0].screenY; }, {passive: false});
-        document.addEventListener('touchmove', e => { if(gameRunning) e.preventDefault(); }, {passive: false}); // Блокирует скролл только во время игры
-        document.addEventListener('touchend', e => {
-            if (!gameRunning) return;
-            const teX = e.changedTouches[0].screenX;
-            const teY = e.changedTouches[0].screenY;
-            const dx = teX - tsX;
-            const dy = teY - tsY;
-            
-            if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return; // Игнорируем тап
-
-            if (Math.abs(dx) > Math.abs(dy)) {
-                if (dx > 0 && direction !== 'LEFT') nextDirection = 'RIGHT';
-                else if (dx < 0 && direction !== 'RIGHT') nextDirection = 'LEFT';
-            } else {
-                if (dy > 0 && direction !== 'UP') nextDirection = 'DOWN';
-                else if (dy < 0 && direction !== 'DOWN') nextDirection = 'UP';
+            function spawnAsteroid() {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = ringRadius + 140;
+                const x = w / 2 + Math.cos(angle) * distance;
+                const y = h / 2 + Math.sin(angle) * distance;
+                asteroids.push({
+                    x,
+                    y,
+                    r: 18 + Math.random() * 34,
+                    speed: 0.9 + Math.random() * 1.9,
+                    angle: Math.atan2(h / 2 - y, w / 2 - x) + (Math.random() - 0.5) * 0.22
+                });
             }
-        }, {passive: false});
 
-        // Init
-        draw();
+            function spawnFuel() {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * (ringRadius * 0.7);
+                fuels.push({
+                    x: w / 2 + Math.cos(angle) * distance,
+                    y: h / 2 + Math.sin(angle) * distance,
+                    r: 13,
+                    pulse: Math.random() * Math.PI * 2
+                });
+            }
+
+            function explode(x, y, color = '#ff0077') {
+                for (let i = 0; i < 60; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    const speed = 2 + Math.random() * 6;
+                    particles.push({
+                        x,
+                        y,
+                        vx: Math.cos(a) * speed,
+                        vy: Math.sin(a) * speed,
+                        life: 1,
+                        color
+                    });
+                }
+                if (particles.length > 600) particles.splice(0, particles.length - 600);
+            }
+
+            function updateTrail() {
+                player.trail.push({ x: player.x, y: player.y });
+                if (player.trail.length > 24) player.trail.shift();
+            }
+
+            function drawTrail() {
+                if (player.trail.length < 2) return;
+                ctx.save();
+                ctx.strokeStyle = '#00e5ff';
+                ctx.lineWidth = 3;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                player.trail.forEach((point, index) => {
+                    if (index === 0) ctx.moveTo(point.x, point.y);
+                    else ctx.lineTo(point.x, point.y);
+                });
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function drawRing(now) {
+                ctx.save();
+                ctx.strokeStyle = `rgba(255,80,140,${0.45 + Math.sin(now * 0.004) * 0.2})`;
+                ctx.lineWidth = 12;
+                ctx.shadowBlur = 40;
+                ctx.shadowColor = '#ff3cac';
+                ctx.beginPath();
+                ctx.arc(w / 2, h / 2, ringRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            function loop(now) {
+                if (!gameRunning) return;
+                const delta = Math.min((now - lastFrameTime) / 1000, 0.05);
+                lastFrameTime = now;
+
+                ctx.fillStyle = 'rgba(0,0,0,0.22)';
+                ctx.fillRect(0, 0, w, h);
+
+                const stage = Math.floor(timeSurvived / settings.shrinkEvery);
+                if (stage > shrinkStage) {
+                    shrinkStage = stage;
+                    ringRadius = Math.max(settings.minRingRadius + 25, ringRadius * settings.shrinkFactor);
+                }
+
+                const asteroidChance = Math.min((0.04 + timeSurvived / 650) * delta * 60, 0.7);
+                if (Math.random() < asteroidChance) spawnAsteroid();
+                if (fuels.length < 3) {
+                    const fuelChance = Math.min(0.03 * delta * 60, 0.45);
+                    if (Math.random() < fuelChance) spawnFuel();
+                }
+
+                drawRing(now);
+                updateTrail();
+                drawTrail();
+
+                ctx.save();
+                ctx.fillStyle = '#0ff';
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 36;
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                for (let i = asteroids.length - 1; i >= 0; i--) {
+                    const a = asteroids[i];
+                    a.x += Math.cos(a.angle) * a.speed;
+                    a.y += Math.sin(a.angle) * a.speed;
+                    a.speed *= 1 + 0.18 * delta;
+
+                    ctx.save();
+                    ctx.fillStyle = '#bbb';
+                    ctx.shadowColor = '#f44';
+                    ctx.shadowBlur = 25;
+                    ctx.beginPath();
+                    ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    if (Math.hypot(a.x - player.x, a.y - player.y) < a.r + player.r) {
+                        explode(player.x, player.y);
+                        finishRun();
+                        return;
+                    }
+                    if (a.x < -200 || a.x > w + 200 || a.y < -200 || a.y > h + 200) {
+                        asteroids.splice(i, 1);
+                    }
+                }
+
+                for (let i = fuels.length - 1; i >= 0; i--) {
+                    const f = fuels[i];
+                    ctx.save();
+                    ctx.shadowColor = '#0ff';
+                    ctx.shadowBlur = 40;
+                    const pulse = 1 + Math.sin(now * 0.005 + f.pulse) * 0.18;
+                    ctx.fillStyle = '#00ffff';
+                    ctx.beginPath();
+                    ctx.arc(f.x, f.y, f.r * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+
+                    if (Math.hypot(f.x - player.x, f.y - player.y) < f.r + player.r + 4) {
+                        fuel = Math.min(100, fuel + 32);
+                        explode(f.x, f.y, '#00ffff');
+                        fuels.splice(i, 1);
+                    }
+                }
+
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.x += p.vx * delta * 60 * 0.2;
+                    p.y += p.vy * delta * 60 * 0.2;
+                    p.life -= 0.9 * delta;
+                    if (p.life <= 0) {
+                        particles.splice(i, 1);
+                        continue;
+                    }
+                    ctx.globalAlpha = p.life;
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+                }
+                ctx.globalAlpha = 1;
+
+                timeSurvived += delta;
+                fuel = Math.max(0, fuel - settings.fuelDrainPerSecond * delta);
+                uiTime.textContent = Math.floor(timeSurvived);
+                uiFuel.textContent = Math.max(0, Math.floor(fuel));
+
+                if (fuel <= 0 || ringRadius <= settings.minRingRadius) {
+                    explode(player.x, player.y, '#ff0077');
+                    finishRun();
+                    return;
+                }
+
+                loopHandle = requestAnimationFrame(loop);
+            }
+
+            function startGame() {
+                setCanvasSize();
+                cancelAnimationFrame(loopHandle);
+                asteroids = [];
+                fuels = [];
+                particles = [];
+                player = { x: w / 2, y: h / 2, r: 16, trail: [] };
+                fuel = 100;
+                timeSurvived = 0;
+                shrinkStage = 0;
+                ringRadius = baseRingRadius();
+                lastFrameTime = performance.now();
+                uiTime.textContent = '0';
+                uiFuel.textContent = '100';
+                startScreen.classList.add('hidden');
+                gameOverScreen.classList.add('hidden');
+                newRecordBadge.classList.add('hidden');
+                gameRunning = true;
+                loopHandle = requestAnimationFrame(loop);
+            }
+
+            // --- отправка результата в Telegram WebApp ---
+            function sendResultToTelegram() {
+                if (!isTelegram || !tg || !tg.sendData) return;
+
+                const seconds = Math.floor(timeSurvived);
+
+                const payload = {
+                    action: "save_score",
+                    game_id: GAME_ID,
+                    game_name: GAME_NAME,
+                    score: seconds,           // в рейтинге будет "секунд выживания"
+                    seconds: seconds,
+                    fuel_left: Math.floor(fuel),
+                    version: GAME_VERSION
+                };
+
+                try {
+                    tg.sendData(JSON.stringify(payload));
+                    // Можно подсказку показать в игре, но тут уже UI минимальный.
+                } catch (e) {
+                    console.error("Telegram sendData error:", e);
+                }
+            }
+
+            function finishRun() {
+                if (!gameRunning) return;
+                gameRunning = false;
+
+                const seconds = Math.floor(timeSurvived);
+                finalTimeEl.textContent = seconds;
+
+                if (seconds > best) {
+                    best = seconds;
+                    uiBest.textContent = best;
+                    newRecordBadge.classList.remove('hidden');
+                    try { localStorage.setItem('spaceEscapeBest', String(best)); } catch (err) {}
+                } else {
+                    newRecordBadge.classList.add('hidden');
+                }
+
+                // отправляем результат в бота, если игра запущена как WebApp
+                sendResultToTelegram();
+
+                setTimeout(() => gameOverScreen.classList.remove('hidden'), 450);
+            }
+        })();
     </script>
 </body>
 </html>
