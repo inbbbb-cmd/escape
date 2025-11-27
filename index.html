@@ -5,55 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Космический побег v3.0</title>
+    <title>Космический побег v3.1</title>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { 
-            background:#000; 
-            overflow:hidden; 
-            touch-action: none;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
+        body { background:#000; overflow:hidden; touch-action:none; user-select:none; -webkit-tap-highlight-color:transparent; }
         canvas { display:block; background:#000; }
-        
-        #version {
-            position:fixed; top:8px; right:12px; z-index:200;
-            color:#0ff; font:700 14px 'Courier New', monospace;
-            text-shadow:0 0 10px #0ff; opacity:0.7;
-        }
-        #ui {
-            position:fixed; top:10px; left:10px; z-index:100;
-            font:700 18px 'Courier New', monospace; color:#0ff;
-            text-shadow:0 0 10px #0ff; pointer-events:none;
-        }
-        @media (max-width:480px) {
-            #ui { font-size:16px; top:8px; left:8px; }
-            #version { font-size:13px; top:6px; right:10px; }
-        }
-
-        #startScreen, #gameOverScreen {
-            position:fixed; inset:0; background:rgba(0,0,0,0.98);
-            display:flex; flex-direction:column; align-items:center; justify-content:center;
-            text-align:center; color:#0ff;
-        }
+        #version { position:fixed; top:8px; right:12px; z-index:200; color:#0ff; font:700 14px 'Courier New'; text-shadow:0 0 10px #0ff; opacity:0.8; }
+        #ui { position:fixed; top:10px; left:10px; z-index:100; font:700 18px 'Courier New'; color:#0ff; text-shadow:0 0 10px #0ff; pointer-events:none; }
+        @media (max-width:480px) { #ui{font-size:16px;top:8px;left:8px;} #version{font-size:13px;top:6px;right:10px;} }
+        #startScreen, #gameOverScreen { position:fixed; inset:0; background:rgba(0,0,0,0.98); display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#0ff; }
         h1 { font-size:3.8rem; margin-bottom:20px; text-shadow:0 0 25px #0ff; }
-        p { font-size:1.4rem; max-width:90%; margin:12px 0; }
-        button {
-            margin-top:40px; padding:16px 50px; font-size:1.9rem;
-            background:transparent; border:3px solid #0ff; color:#0ff;
-            border-radius:10px; cursor:pointer; font-weight:bold;
-            text-shadow:0 0 15px #0ff; box-shadow:0 0 25px #0ff;
-            transition:all .25s;
-        }
+        button { margin-top:40px; padding:16px 50px; font-size:1.9rem; background:transparent; border:3px solid #0ff; color:#0ff; border-radius:10px; cursor:pointer; font-weight:bold; text-shadow:0 0 15px #0ff; box-shadow:0 0 25px #0ff; transition:all .25s; }
         button:active { background:#0ff; color:#000; transform:scale(0.94); }
         .glow { text-shadow:0 0 20px #0ff, 0 0 40px #0ff; }
     </style>
 </head>
 <body>
     <canvas id="c"></canvas>
-    
-    <div id="version">v3.0</div>
+    <div id="version">v3.1</div>
     
     <div id="ui">
         <div>Время: <span id="time">0</span>с</div>
@@ -61,12 +30,11 @@
         <div>Топливо: <span id="fuel">100</span>%</div>
     </div>
 
-    <div id="startScreen" onclick="startGame()">
+    <div id="startScreen">
         <h1 class="glow">КОСМИЧЕСКИЙ ПОБЕГ</h1>
-        <p>ПК — двигай мышью<br>Телефон — води пальцем по экрану</p>
-        <p>Собирай голубое топливо • Уворачивайся от астероидов</p>
-        <p>Поле сужается каждые 10 секунд</p>
-        <button>СТАРТ</button>
+        <p>Мышь или палец — корабль следует за тобой</p>
+        <p>Собирай топливо • Уворачивайся от астероидов</p>
+        <button onclick="startGame()">СТАРТ</button>
     </div>
 
     <div id="gameOverScreen" style="display:none">
@@ -79,99 +47,106 @@
     <script>
         const canvas = document.getElementById('c');
         const ctx = canvas.getContext('2d');
-        let w, h;
+        let w = canvas.width  = window.innerWidth;
+        let h = canvas.height = window.innerHeight;
 
+        // Безопасный ресайз
+        let resizeTimer;
         function resize() {
-            w = canvas.width  = window.innerWidth;
-            h = canvas.height = window.innerHeight;
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                w = canvas.width  = window.innerWidth;
+                h = canvas.height = window.innerHeight;
+                if (gameRunning) ringRadius = Math.max(w, h) * 1.4;
+            }, 100);
         }
-        resize();
         window.addEventListener('resize', resize);
-        window.addEventListener('orientationchange', () => setTimeout(resize, 150));
+        window.addEventListener('orientationchange', resize);
 
         let player = { x: w/2, y: h/2, r: 15, trail: [] };
         let asteroids = [], fuels = [], particles = [];
         let time = 0, best = parseInt(localStorage.getItem('spaceEscapeBest')||'0'), fuel = 100;
         let ringRadius = Math.max(w, h) * 1.4;
         let gameRunning = false;
+        let lastShrink = 0;
 
         document.getElementById('best').textContent = best;
 
-        // Универсальное управление
-        const setPlayerPos = e => {
+        // Управление
+        const movePlayer = e => {
             if (!gameRunning) return;
             const rect = canvas.getBoundingClientRect();
             const touch = e.touches ? e.touches[0] : e;
             player.x = touch.clientX - rect.left;
             player.y = touch.clientY - rect.top;
         };
-        canvas.addEventListener('mousemove', setPlayerPos);
-        canvas.addEventListener('touchmove', setPlayerPos, {passive:false});
+        canvas.addEventListener('mousemove', movePlayer);
+        canvas.addEventListener('touchmove', movePlayer, {passive:false});
         canvas.addEventListener('touchstart', e => e.preventDefault());
 
         function startGame() {
             gameRunning = true;
             time = 0; fuel = 100;
             asteroids = []; fuels = []; particles = [];
-            player.trail = [];
+            player = { x: w/2, y: h/2, r: 15, trail: [] };
             ringRadius = Math.max(w, h) * 1.4;
+            lastShrink = 0;
             document.getElementById('startScreen').style.display = 'none';
             document.getElementById('gameOverScreen').style.display = 'none';
             requestAnimationFrame(loop);
         }
 
         function spawnAsteroid() {
-            const a = Math.random()*Math.PI*2;
-            const dist = ringRadius + 100;
+            const a = Math.random() * Math.PI * 2;
+            const dist = ringRadius + 120;
             asteroids.push({
-                x: w/2 + Math.cos(a)*dist,
-                y: h/2 + Math.sin(a)*dist,
-                r: 20 + Math.random()*40,
-                speed: 0.7 + Math.random()*2,
+                x: w/2 + Math.cos(a) * dist,
+                y: h/2 + Math.sin(a) * dist,
+                r: 20 + Math.random() * 40,
+                speed: 0.8 + Math.random() * 2.2,
                 angle: a + Math.PI
             });
         }
 
         function spawnFuel() {
-            if (Math.random() < 0.38) {
-                const a = Math.random()*Math.PI*2;
+            if (Math.random() < 0.4) {
+                const a = Math.random() * Math.PI * 2;
                 fuels.push({
-                    x: w/2 + Math.cos(a)*(ringRadius*0.78),
-                    y: h/2 + Math.sin(a)*(ringRadius*0.78),
+                    x: w/2 + Math.cos(a) * (ringRadius * 0.78),
+                    y: h/2 + Math.sin(a) * (ringRadius * 0.78),
                     r: 13
                 });
             }
         }
 
-        function explode(x, y, color='#ff0066') {
-            for(let i=0; i<55; i++) {
-                const a = Math.random()*Math.PI*2;
-                const s = 4 + Math.random()*10;
-                particles.push({x,y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, life:1, color});
+        function explode(x, y, color = '#ff0066') {
+            for (let i = 0; i < 60; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = 4 + Math.random() * 11;
+                particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, color });
             }
         }
 
         function loop() {
-            ctx.fillStyle = 'rgba(0,0,0,0.14)';
-            ctx.fillRect(0,0,w,h);
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillRect(0, 0, w, h);
 
-            // Сужение кольца
-            if (Math.floor(time)%10 === 0 && time%1 < 0.1 && ringRadius > 150) {
-                ringRadius *= 0.87;
-                canvas.style.transform = 'scale(1.03)';
-                setTimeout(()=>canvas.style.transform='', 150);
+            // Сужение кольца — строго раз в 10 секунд
+            const current10 = Math.floor(time / 10);
+            if (current10 > lastShrink && ringRadius > 140) {
+                lastShrink = current10;
+                ringRadius *= 0.86;
             }
 
-            if (Math.random() < 0.04 + time/700) spawnAsteroid();
-            if (Math.random() < 0.028) spawnFuel();
+            if (Math.random() < 0.045 + time/600) spawnAsteroid();
+            if (Math.random() < 0.03) spawnFuel();
 
             // След
-            player.trail.push({x:player.x, y:player.y});
-            if (player.trail.length > 20) player.trail.shift();
-            ctx.strokeStyle = '#0ff';
-            ctx.lineWidth = 4;
+            player.trail.push({x: player.x, y: player.y});
+            if (player.trail.length > 22) player.trail.shift();
+            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 4;
             ctx.beginPath();
-            player.trail.forEach((p,i)=> i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+            player.trail.forEach((p,i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
             ctx.stroke();
 
             // Корабль
@@ -180,59 +155,53 @@
             ctx.beginPath(); ctx.arc(player.x, player.y, player.r, 0, Math.PI*2); ctx.fill();
 
             // Астероиды
-            asteroids = asteroids.filter(a => {
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const a = asteroids[i];
                 a.x += Math.cos(a.angle) * a.speed;
                 a.y += Math.sin(a.angle) * a.speed;
-                a.speed *= 1.013;
+                a.speed *= 1.014;
 
-                ctx.fillStyle = '#999';
-                ctx.shadowColor = '#f44';
-                ctx.shadowBlur = 30;
+                ctx.fillStyle = '#aaa'; ctx.shadowColor = '#f55'; ctx.shadowBlur = 30;
                 ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI*2); ctx.fill();
 
-                if (Math.hypot(a.x-player.x, a.y-player.y) < a.r + player.r + 6) {
+                if (Math.hypot(a.x - player.x, a.y - player.y) < a.r + player.r + 8) {
                     explode(player.x, player.y);
                     gameOver();
-                    return false;
+                    return;
                 }
-                return true;
-            });
+            }
 
             // Топливо
-            fuels = fuels.filter(f => {
-                ctx.fillStyle = '#00ffff';
-                ctx.shadowColor = '#0ff';
-                ctx.shadowBlur = 45;
+            for (let i = fuels.length - 1; i >= 0; i--) {
+                const f = fuels[i];
+                ctx.fillStyle = '#00ffff'; ctx.shadowColor = '#0ff'; ctx.shadowBlur = 45;
                 ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
 
-                if (Math.hypot(f.x-player.x, f.y-player.y) < f.r + player.r) {
-                    fuel = Math.min(100, fuel + 30);
+                if (Math.hypot(f.x - player.x, f.y - player.y) < f.r + player.r) {
+                    fuel = Math.min(100, fuel + 32);
                     explode(f.x, f.y, '#00ffff');
-                    return false;
+                    fuels.splice(i, 1);
                 }
-                return true;
-            });
+            }
 
             // Кольцо
-            ctx.strokeStyle = `rgba(255,60,120,${0.5 + Math.sin(time*4)*0.2})`;
+            ctx.strokeStyle = `rgba(255,80,140,${0.5 + Math.sin(time*3)*0.25})`;
             ctx.lineWidth = 12;
-            ctx.beginPath();
-            ctx.arc(w/2, h/2, ringRadius, 0, Math.PI*2);
-            ctx.stroke();
+            ctx.beginPath(); ctx.arc(w/2, h/2, ringRadius, 0, Math.PI*2); ctx.stroke();
 
             // Частицы
-            particles = particles.filter(p => {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
                 p.x += p.vx; p.y += p.vy; p.life -= 0.018;
+                if (p.life <= 0) { particles.splice(i,1); continue; }
                 ctx.globalAlpha = p.life;
                 ctx.fillStyle = p.color;
                 ctx.fillRect(p.x-4, p.y-4, 8, 8);
-                return p.life > 0;
-            });
+            }
             ctx.globalAlpha = 1;
 
-            // UI + логика
             time += 1/60;
-            fuel -= 0.01;
+            fuel -= 0.011;
             document.getElementById('time').textContent = Math.floor(time);
             document.getElementById('fuel').textContent = Math.floor(fuel);
 
@@ -252,12 +221,8 @@
                 document.getElementById('newRecord').style.display = 'none';
             }
             explode(player.x, player.y, '#ff0066');
-            setTimeout(() => document.getElementById('gameOverScreen').style.display = 'flex', 800);
+            setTimeout(() => document.getElementById('gameOverScreen').style.display = 'flex', 900);
         }
-
-        // Старт по тапу/клику на стартовом экране
-        document.getElementById('startScreen').addEventListener('click', startGame);
-        document.getElementById('startScreen').addEventListener('touchstart', e => { e.preventDefault(); startGame(); });
     </script>
 </body>
 </html>
