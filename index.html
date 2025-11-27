@@ -121,38 +121,24 @@
 
     <script>
         (() => {
-            // --- Telegram WebApp интеграция ---
+            // --- Telegram WebApp интеграция (как в змейке) ---
             let tg = null;
             let isTelegram = false;
             try {
                 if (window.Telegram && window.Telegram.WebApp) {
-                    const wa = window.Telegram.WebApp;
-                    // Считаем, что это реальный запуск из Telegram только если есть initData / initDataUnsafe
-                    const hasInitData =
-                        (wa.initData && wa.initData.length > 0) ||
-                        (wa.initDataUnsafe && Object.keys(wa.initDataUnsafe).length > 0);
-
-                    if (hasInitData) {
-                        tg = wa;
-                        tg.ready();
-                        tg.expand();
-                        isTelegram = true;
-                        console.log('[ESCAPE] Telegram WebApp detected, initData ok');
-                    } else {
-                        console.log('[ESCAPE] Telegram.WebApp есть, но initData пустой — считаю обычным браузером');
-                    }
-                } else {
-                    console.log('[ESCAPE] Telegram.WebApp не найден — обычный браузер');
+                    tg = window.Telegram.WebApp;
+                    tg.ready();
+                    tg.expand();
+                    isTelegram = true;
                 }
             } catch (e) {
-                console.error('[ESCAPE] Ошибка инициализации Telegram WebApp:', e);
                 tg = null;
                 isTelegram = false;
             }
 
             const GAME_ID = "escape";
             const GAME_NAME = "Космический побег";
-            const GAME_VERSION = "v3.2";
+            const GAME_VERSION = "3.2";
 
             const canvas = document.getElementById('game');
             const ctx = canvas.getContext('2d');
@@ -461,33 +447,26 @@
                 loopHandle = requestAnimationFrame(loop);
             }
 
-            // --- отправка результата в Telegram WebApp ---
-            function sendResultToTelegram() {
-                if (!isTelegram || !tg || !tg.sendData) {
-                    console.log('[ESCAPE] Not in Telegram WebApp, skip sendData');
-                    return;
-                }
+            // --- Отправка статистики в бота (как в змейке) ---
+            function sendStatsToBot() {
+                if (!isTelegram || !tg || !tg.sendData) return;
 
                 const seconds = Math.floor(timeSurvived);
 
                 const payload = {
-                    action: "save_score",
+                    action: 'save_score',
                     game_id: GAME_ID,
                     game_name: GAME_NAME,
-                    score: seconds,           // в рейтинге — «секунд выживания»
+                    score: seconds,                // основной счёт
                     seconds: seconds,
                     fuel_left: Math.floor(fuel),
                     version: GAME_VERSION
                 };
 
                 try {
-                    console.log('[ESCAPE] Sending result to bot:', payload);
                     tg.sendData(JSON.stringify(payload));
-                    if (tg.showAlert) {
-                        tg.showAlert('Результат отправлен боту. Открой чат с @Games_trivia_bot, чтобы увидеть рейтинг.');
-                    }
                 } catch (e) {
-                    console.error("[ESCAPE] Telegram sendData error:", e);
+                    console.error('Telegram sendData error:', e);
                 }
             }
 
@@ -507,8 +486,8 @@
                     newRecordBadge.classList.add('hidden');
                 }
 
-                // отправляем результат в бота, если игра запущена как WebApp
-                sendResultToTelegram();
+                // Отправляем статистику в бота (аналогично змейке)
+                sendStatsToBot();
 
                 setTimeout(() => gameOverScreen.classList.remove('hidden'), 450);
             }
