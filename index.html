@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Космический побег • Space Escape</title>
+    <style>
+        * { margin:0; padding:0; overflow:hidden; }
+        body { background:#000; color:#0ff; font-family: 'Courier New', monospace; }
+        canvas { display:block; }
+        #ui {
+            position: absolute; top: 15px; left: 15px; z-index: 10;
+            font-size: 22px; text-shadow: 0 0 10px #0ff;
+        }
+        #startScreen, #gameOverScreen {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.95);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #0ff; text-align: center; cursor: pointer;
+        }
+        h1 { font-size: 4rem; margin-bottom: 20px; text-shadow: 0 0 20px #0ff; }
+        p { font-size: 1.5rem; margin: 15px 0; }
+        button {
+            margin-top: 30px; padding: 15px 40px; font-size: 1.8rem;
+            background: transparent; border: 3px solid #0ff; color: #0ff;
+            cursor: pointer; transition: all 0.3s;
+            text-shadow: 0 0 10px #0ff; box-shadow: 0 0 20px #0ff;
+        }
+        button:hover { background: #0ff; color: #000; box-shadow: 0 0 40px #0ff; }
+        .glow { text-shadow: 0 0 20px #0ff, 0 0 40px #0ff; }
+    </style>
+</head>
+<body>
+    <canvas id="c"></canvas>
+    
+    <div id="ui">
+        <div>Время: <span id="time">0</span>с</div>
+        <div>Рекорд: <span id="best">0</span>с</div>
+        <div>Топливо: <span id="fuel">100</span>%</div>
+    </div>
+
+    <div id="startScreen">
+        <h1 class="glow">КОСМИЧЕСКИЙ ПОБЕГ</h1>
+        <p>Держи курс мышью или пальцем</p>
+        <p>Собирай голубое топливо • Уворачивайся от астероидов</p>
+        <p>Поле сужается каждые 10 секунд...</p>
+        <button onclick="startGame()">НАЧАТЬ МИССИЮ</button>
+    </div>
+
+    <div id="gameOverScreen" style="display:none">
+        <h1 class="glow">ВЗРЫВ</h1>
+        <p>Ты продержался <span id="finalTime">0</span> секунд</p>
+        <p id="newRecord" style="color:#0f0; font-size:2rem; display:none">НОВЫЙ РЕКОРД!</p>
+        <button onclick="startGame()">ПОПРОБОВАТЬ СНОВА</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let player = { x: canvas.width/2, y: canvas.height/2, r: 15, trail: [] };
+        let asteroids = [];
+        let fuels = [];
+        let particles = [];
+        let time = 0;
+        let best = localStorage.getItem('spaceEscapeBest') || 0;
+        let fuel = 100;
+        let ringRadius = Math.max(canvas.width, canvas.height);
+        let gameRunning = false;
+
+        document.getElementById('best').textContent = best;
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ringRadius = Math.max(canvas.width, canvas.height);
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            if (gameRunning) {
+                player.x = e.clientX;
+                player.y = e.clientY;
+            }
+        });
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (gameRunning) {
+                player.x = e.touches[0].clientX;
+                player.y = e.touches[0].clientY;
+            }
+        }, {passive: false});
+
+        function startGame() {
+            gameRunning = true;
+            time = 0;
+            fuel = 100;
+            asteroids = [];
+            fuels = [];
+            particles = [];
+            player.trail = [];
+            ringRadius = Math.max(canvas.width, canvas.height) * 1.2;
+            
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOverScreen').style.display = 'none';
+            
+            requestAnimationFrame(loop);
+        }
+
+        function spawnAsteroid() {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = ringRadius + 100;
+            asteroids.push({
+                x: canvas.width/2 + Math.cos(angle) * dist,
+                y: canvas.height/2 + Math.sin(angle) * dist,
+                r: 20 + Math.random() * 40,
+                speed: 0.5 + Math.random() * 2,
+                angle: angle + Math.PI
+            });
+        }
+
+        function spawnFuel() {
+            if (Math.random() < 0.3) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = ringRadius * 0.7;
+                fuels.push({
+                    x: canvas.width/2 + Math.cos(angle) * dist,
+                    y: canvas.height/2 + Math.sin(angle) * dist,
+                    r: 12
+                });
+            }
+        }
+
+        function createExplosion(x, y, color = '#ff0040') {
+            for(let i = 0; i < 60; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 3 + Math.random() * 8;
+                particles.push({
+                    x, y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    life: 1,
+                    color
+                });
+            }
+        }
+
+        function loop() {
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Сужение кольца каждые 10 сек
+            if (time % 10 < 0.016 && ringRadius > 200) {
+                ringRadius *= 0.85;
+                // тряска экрана
+                canvas.style.transform = 'translate(-5px, -5px)';
+                setTimeout(() => canvas.style.transform = '', 100);
+            }
+
+            // Спавн астероидов и топлива
+            if (Math.random() < 0.03 + time/1000) spawnAsteroid();
+            if (Math.random() < 0.02) spawnFuel();
+
+            // Игрок + след
+            player.trail.push({x: player.x, y: player.y});
+            if (player.trail.length > 20) player.trail.shift();
+
+            ctx.strokeStyle = '#0ff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            player.trail.forEach((p,i) => {
+                if(i===0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+
+            ctx.fillStyle = '#0ff';
+            ctx.shadowBlur = 30;
+            ctx.shadowColor = '#0ff';
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
+            ctx.fill();
+
+            // Астероиды
+            asteroids.forEach((a, i) => {
+                a.x += Math.cos(a.angle) * a.speed;
+                a.y += Math.sin(a.angle) * a.speed;
+                a.speed *= 1.01;
+
+                ctx.fillStyle = '#666';
+                ctx.shadowColor = '#f00';
+                ctx.shadowBlur = 20;
+                ctx.beginPath();
+                ctx.arc(a.x, a.y, a.r, 0, Math.PI*2);
+                ctx.fill();
+
+                // Столкновение с игроком
+                if (Math.hypot(a.x - player.x, a.y - player.y) < a.r + player.r) {
+                    createExplosion(player.x, player.y, '#ff0066');
+                    gameOver();
+                }
+            });
+
+            // Топливо
+            fuels.forEach((f, i) => {
+                ctx.fillStyle = '#00ffff';
+                ctx.shadowColor = '#0ff';
+                ctx.shadowBlur = 40;
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+                ctx.fill();
+
+                if (Math.hypot(f.x - player.x, f.y - player.y) < f.r + player.r) {
+                    fuel = Math.min(100, fuel + 25);
+                    fuels.splice(i, 1);
+                    createExplosion(f.x, f.y, '#00ffff');
+                }
+            });
+
+            // Кольцо сужения
+            ctx.strokeStyle = `rgba(255, 0, 100, ${0.3 + Math.sin(time)*0.2})`;
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.arc(canvas.width/2, canvas.height/2, ringRadius, 0, Math.PI*2);
+            ctx.stroke();
+
+            // Частицы
+            particles.forEach((p, i) => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.02;
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x-3, p.y-3, 6, 6);
+                if (p.life <= 0) particles.splice(i, 1);
+            });
+            ctx.globalAlpha = 1;
+
+            // UI
+            time += 0.016;
+            fuel -= 0.008; // расход топлива
+            document.getElementById('time').textContent = Math.floor(time);
+            document.getElementById('fuel').textContent = Math.floor(fuel);
+
+            if (fuel <= 0 || ringRadius < player.r * 3) {
+                gameOver();
+            }
+
+            if (gameRunning) requestAnimationFrame(loop);
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('finalTime').textContent = Math.floor(time);
+            
+            if (time > best) {
+                best = time;
+                localStorage.setItem('spaceEscapeBest', Math.floor(time));
+                document.getElementById('best').textContent = Math.floor(best);
+                document.getElementById('newRecord').style.display = 'block';
+            } else {
+                document.getElementById('newRecord').style.display = 'none';
+            }
+            
+            createExplosion(player.x, player.y, '#ff0066');
+            document.getElementById('gameOverScreen').style.display = 'flex';
+        }
+
+        // Автостарт при клике на стартовый экран
+        document.getElementById('startScreen').onclick = startGame;
+    </script>
+</body>
+</html>
