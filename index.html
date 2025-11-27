@@ -126,18 +126,29 @@
             let isTelegram = false;
             try {
                 if (window.Telegram && window.Telegram.WebApp) {
-                    tg = window.Telegram.WebApp;
-                    tg.ready();
-                    tg.expand();
-                    isTelegram = true;
+                    const wa = window.Telegram.WebApp;
+                    // Считаем, что это реальный запуск из Telegram только если есть initData / initDataUnsafe
+                    const hasInitData =
+                        (wa.initData && wa.initData.length > 0) ||
+                        (wa.initDataUnsafe && Object.keys(wa.initDataUnsafe).length > 0);
+
+                    if (hasInitData) {
+                        tg = wa;
+                        tg.ready();
+                        tg.expand();
+                        isTelegram = true;
+                        console.log('[ESCAPE] Telegram WebApp detected, initData ok');
+                    } else {
+                        console.log('[ESCAPE] Telegram.WebApp есть, но initData пустой — считаю обычным браузером');
+                    }
+                } else {
+                    console.log('[ESCAPE] Telegram.WebApp не найден — обычный браузер');
                 }
             } catch (e) {
+                console.error('[ESCAPE] Ошибка инициализации Telegram WebApp:', e);
                 tg = null;
                 isTelegram = false;
             }
-
-            // Можно при желании показывать подсказку, что рейтинг работает только через бота,
-            // но отдельного текста в UI здесь не добавляем — логика только в отправке.
 
             const GAME_ID = "escape";
             const GAME_NAME = "Космический побег";
@@ -452,7 +463,10 @@
 
             // --- отправка результата в Telegram WebApp ---
             function sendResultToTelegram() {
-                if (!isTelegram || !tg || !tg.sendData) return;
+                if (!isTelegram || !tg || !tg.sendData) {
+                    console.log('[ESCAPE] Not in Telegram WebApp, skip sendData');
+                    return;
+                }
 
                 const seconds = Math.floor(timeSurvived);
 
@@ -460,17 +474,20 @@
                     action: "save_score",
                     game_id: GAME_ID,
                     game_name: GAME_NAME,
-                    score: seconds,           // в рейтинге будет "секунд выживания"
+                    score: seconds,           // в рейтинге — «секунд выживания»
                     seconds: seconds,
                     fuel_left: Math.floor(fuel),
                     version: GAME_VERSION
                 };
 
                 try {
+                    console.log('[ESCAPE] Sending result to bot:', payload);
                     tg.sendData(JSON.stringify(payload));
-                    // Можно подсказку показать в игре, но тут уже UI минимальный.
+                    if (tg.showAlert) {
+                        tg.showAlert('Результат отправлен боту. Открой чат с @Games_trivia_bot, чтобы увидеть рейтинг.');
+                    }
                 } catch (e) {
-                    console.error("Telegram sendData error:", e);
+                    console.error("[ESCAPE] Telegram sendData error:", e);
                 }
             }
 
